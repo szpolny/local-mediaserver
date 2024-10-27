@@ -1,0 +1,204 @@
+services:
+  nginx:
+    container_name: nginx
+    image: nginx:latest
+    restart: unless-stopped
+    depends_on:
+      - homarr
+      - sonarr
+      - radarr
+      - gluetun
+      - jellyfin
+      - bazarr
+      - jellyseerr
+      - prowlarr
+      - flood
+      - open-webui
+    links:
+      - "gluetun:qbittorrent"
+    ports:
+      - 443:443
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl
+  homarr:
+    container_name: homarr
+    image: ghcr.io/ajnart/homarr:latest
+    restart: unless-stopped
+    links:
+      - "gluetun:qbittorrent"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./homarr/configs:/app/data/configs
+      - ./homarr/icons:/app/public/icons
+      - ./homarr/data:/data
+    ports:
+      - 7575:7575
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Warsaw
+    volumes:
+      - ./sonarr:/config
+      - ./library/tv:/tv
+      - ./downloads:/downloads
+    links:
+      - "gluetun:qbittorrent"
+    ports:
+      - 8989:8989
+    restart: unless-stopped
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Warsaw
+    volumes:
+      - ./radarr:/config
+      - ./library/movies:/movies #optional
+      - ./downloads:/downloads #optional
+    links:
+      - "gluetun:qbittorrent"
+    ports:
+      - 7878:7878
+    restart: unless-stopped
+  gluetun:
+    container_name: gluetun
+    image: qmcgaw/gluetun:latest
+    cap_add:
+      - NET_ADMIN
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    volumes:
+      - ./gluetun:/gluetun
+    ports:
+      - 8080:8080 #qBittorrent WebUI
+      - 29206:29206 #qBittorrent torrenting port
+      - 29206:29206/udp #qBittorrent torrenting port
+    environment:
+      - VPN_SERVICE_PROVIDER=mullvad
+      - VPN_TYPE=openvpn
+      - OPENVPN_USER=${OPENVPN_USER}
+    restart: unless-stopped
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    network_mode: service:gluetun
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Warsaw
+      - WEBUI_PORT=8080
+      - TORRENTING_PORT=29206
+    volumes:
+      - ./qbittorrent:/config
+      - ./downloads:/downloads #optional
+    restart: unless-stopped
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Warsaw
+    volumes:
+      - ./jellyfin:/config
+      - ./library/tv:/data/tv
+      - ./library/movies:/data/movies
+    ports:
+      - 8096:8096
+      - 8920:8920 #optional
+      - 7359:7359/udp #optional
+      - 1900:1900/udp #optional
+    restart: unless-stopped
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Warsaw
+    depends_on:
+      - sonarr
+      - radarr
+    volumes:
+      - ./bazarr:/config
+      - ./library/movies:/movies #optional
+      - ./library/tv:/tv #optional
+    ports:
+      - 6767:6767
+    restart: unless-stopped
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    environment:
+      - LOG_LEVEL=debug
+      - TZ=Europe/Warsaw
+    depends_on:
+      - sonarr
+      - radarr
+      - jellyfin
+    ports:
+      - 5055:5055
+    volumes:
+      - ./jellyseerr:/app/config
+    restart: unless-stopped
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Warsaw
+    volumes:
+      - ./prowlarr:/config
+    ports:
+      - 9696:9696
+    restart: unless-stopped
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - LOG_LEVEL=info
+    ports:
+      - 8191:8191
+    restart: unless-stopped
+  flood:
+    image: jesec/flood:latest
+    container_name: flood
+    restart: unless-stopped
+    command: --port 3000 --allowedpath /data
+    environment:
+      - TZ=Europe/Warsaw
+    volumes:
+      - ./downloads:/data
+      - ./flood:/config
+    ports:
+      - 3134:3000
+    links:
+      - "gluetun:qbittorrent"
+    depends_on:
+      - gluetun
+  watchtower:
+    container_name: watchtower
+    image: containrrr/watchtower:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+  open-webui:
+    container_name: open-webui
+    image: ghcr.io/open-webui/open-webui:main
+    restart: unless-stopped
+    ports:
+      - 3210:8080
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - ./open-webui:/app/backend/data
+
+
